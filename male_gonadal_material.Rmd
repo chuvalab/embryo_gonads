@@ -36,9 +36,10 @@ knitr::opts_chunk$set(
 
 ## Libraries
 ```{r}
+suppressMessages(library(Seurat))
+suppressMessages(library(SeuratDisk))
 suppressMessages(library(gridExtra))
 suppressMessages(library(ggplot2))
-suppressMessages(library(Seurat))
 suppressMessages(library(ggplot2))
 suppressMessages(library(plotly))
 suppressMessages(library(dplyr))
@@ -73,8 +74,8 @@ g2m.genes <- cc.genes$g2m.genes
 
 ## Load data
 ```{r}
-G3_data <- Read10X_h5(filename = "/path/to/filtered_feature_bc_matrix.h5")
-G4_data <- Read10X_h5(filename = "/path/to/filtered_feature_bc_matrix.h5")
+G3_data <- Read10X_h5(filename = "/path/to/G3/filtered_feature_bc_matrix.h5")
+G4_data <- Read10X_h5(filename = "/path/to/G4/filtered_feature_bc_matrix.h5")
 ```
 
 ## Create seurat objects
@@ -93,7 +94,7 @@ G3[["capture"]] <- "batch_0_G3"
 
 cell_id2calledS <- read.table(file = "/path/to/gonads_cell_id2calledS.tsv",
                               header = TRUE, 
-                              sep = "\t") # Cell ID to subject (donor) id assigned, using the Vireo
+                              sep = "\t")
 cell_id2calledS$sample_id <- sapply(strsplit(x = cell_id2calledS$cell_bc, split = ":", fixed = TRUE), function(x) x[[1]])
 cell_id2calledS$clean_barcode <- sapply(strsplit(x = cell_id2calledS$cell_bc, split = ":", fixed = TRUE), function(x) x[[2]])
 G3_cellid_2_barcode <- cell_id2calledS %>% filter(sample_id=="G3")
@@ -132,13 +133,12 @@ batch_0 <- merge(x=G3,
 
 # Batch 2
 * Multiplexed with other samples, see project-416 for details and raw data
-* Sample_0H were demultiplexed using HTOs and SCSM
 * Due to the pre-processing, load from Seurat objects
 
 ## Load seurat objects
 * Add metadata
 ```{r}
-batch_2 <- readRDS("/path/to/batch_2_jasin.rds")
+batch_2 <- readRDS("/path_to/hash_vs_scsm/batch_2_jasin.rds")
 batch_2[["sample_id"]] <- batch_2[["cleaned_subject_ids"]]
 
 age <- batch_2[['sample_id']][,"sample_id"]
@@ -183,7 +183,7 @@ batch_2 <- subset(x=batch_2,
 ```
 
 # Mesonephros
-* Consists of 3 subjects, demultiplexed using SCSM + partly failed HTOs
+* Consists of 3 subjects
 * Load as a seurat object, has been previously processed
 
 ## Load object and add metadata
@@ -388,7 +388,7 @@ table(object[["sample_id"]])
 table(object[["trimester"]])
 ```
 
-## Count trimester
+## Count tissue
 ```{r}
 table(object[["tissue"]])
 ```
@@ -403,6 +403,8 @@ sce <- as.SingleCellExperiment(object)
 sce <- scDblFinder(sce, 
                    clusters=TRUE, 
                    samples="capture")
+# saveRDS(object = sce, 
+#         file = "sce.rds")
 scDblFinder_table <- data.frame(dbl_finder_score=sce$scDblFinder.score, 
                                 dbl_finder_class=sce$scDblFinder.class)
 rownames(scDblFinder_table) <- colnames(sce)
@@ -584,12 +586,15 @@ DimPlot(object,
        reduction = "umap",
        group.by = "dbl_finder_class")
 saveRDS(object = object, file = "male_gonadal_remove_doublets_mnn.rds")
+SaveH5Seurat(object, filename = "male_gonadal_remove_doublets_mnn.h5Seurat")
+Convert("male_gonadal_remove_doublets_mnn.h5Seurat", dest = "h5ad")
 cell_bc <- colnames(object)
 write.table(x = cell_bc, 
             file = "cell_barcodes_male_gonadal_remove_doublets_mnn.tsv", 
             row.names = FALSE,
             quote = FALSE)
 ```
+
 ## Finding differentially expressed features
 Seurat can help you find markers that define clusters via differential expression. With settings used below, it identifies positive only markers of a single cluster (specified in ident.1), compared to all other cells. FindAllMarkers() automates this process for all clusters, but you can also test groups of clusters vs. each other, or against all cells.
 
