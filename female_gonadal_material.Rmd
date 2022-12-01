@@ -70,8 +70,8 @@ g2m.genes <- cc.genes$g2m.genes
 
 ## Load data
 ```{r}
-G1_data <- Read10X_h5(filename = "/path/to/filtered_feature_bc_matrix.h5")
-G2_data <- Read10X_h5(filename = "/path/to/filtered_feature_bc_matrix.h5")
+G1_data <- Read10X_h5(filename = "/path/to/G1/filtered_feature_bc_matrix.h5")
+G2_data <- Read10X_h5(filename = "/path/to/G2/filtered_feature_bc_matrix.h5")
 ```
 
 ## Create seurat objects
@@ -89,8 +89,8 @@ G1[["batch"]] <- "batch_0"
 G1[["capture"]] <- "batch_0_G1"
 G1[["tissue"]] <- "G1"
 
-cell_id2calledS <- read.table(file = "/path/to/scsm/gonads_cell_id2calledS.tsv",
-    header = TRUE, sep = "\t") # Cell ID to subject (donor) id assigned, using the Vireo
+cell_id2calledS <- read.table(file = "/path/to/gonads_cell_id2calledS.tsv",
+    header = TRUE, sep = "\t")
 cell_id2calledS$sample_id <- sapply(strsplit(x = cell_id2calledS$cell_bc, split = ":",
     fixed = TRUE), function(x) x[[1]])
 cell_id2calledS$clean_barcode <- sapply(strsplit(x = cell_id2calledS$cell_bc, split = ":",
@@ -130,12 +130,12 @@ batch_0 <- merge(x=G1,
 ```
 
 # Batch 1
-* Multiplexed with other samples
-* Both Sample48H and Sample120H were demultiplexed using Vireo
+* Multiplexed with other samples, see project-416 for details and raw data
+* Both Sample48H and Sample120H were demultiplexed
 * Due to the pre-processing, load from Seurat objects
-* Use subject (donor) SID04 and SID06
+* After consulting Xueying, only keep SID04 and SID06
 ```{r}
-batch_1 <- readRDS("/exports/sasc/project-416-2T_ovary_0-48-120_PGCLC_10x_jasin_arend/analysis/split_dataset/trimester_2.rds")
+batch_1 <- readRDS("/path/to/trimester_2.rds")
 batch_1 <- subset(batch_1, 
                       subset = calledS %in% c("SID04", "SID06"))
 batch_1[["age"]] <- "wpf_17-19"
@@ -148,8 +148,8 @@ batch_1[["tissue"]] <- "ovary+meso"
 ```
 
 # Batch 2
-* Multiplexed with other samples
-* Sample_0H were demultiplexed using HTOs and Vireo
+* Multiplexed with other samples, see project-416 for details and raw data
+* Sample_0H were demultiplexed using HTOs and SCSM
 * Due to the pre-processing, load from Seurat objects
 
 ## Load seurat objects
@@ -201,7 +201,7 @@ batch_2 <- subset(x=batch_2,
 ```
 
 # Mesonephros
-* Consists of 2 subjects, demultiplexed using Vireo + partly failed HTOs
+* Consists of 3 subjects
 * Load as a seurat object, has been previously processed
 
 ## Load object and add metadata
@@ -416,6 +416,8 @@ sce <- as.SingleCellExperiment(object)
 sce <- scDblFinder(sce, 
                    clusters=TRUE, 
                    samples="capture")
+# saveRDS(object = sce, 
+#         file = "sce.rds")
 scDblFinder_table <- data.frame(dbl_finder_score=sce$scDblFinder.score, 
                                 dbl_finder_class=sce$scDblFinder.class)
 rownames(scDblFinder_table) <- colnames(sce)
@@ -514,11 +516,15 @@ DimPlot(object,
 
 ## Batch corrrect MNN between batches
 ```{r}
+# object <- RunFastMNN(object.list = SplitObject(object, split.by = "batch"))
 object <- RunFastMNN(object.list = SplitObject(DietSeurat(object), split.by = "batch"), k =10) 
 ```
 
 ## Redo clustering, UMAP calc with mnn correction
 ```{r}
+# object <- FindNeighbors(object, reduction = "mnn", dims = c(1:15))
+# object <- FindClusters(object, resolution = 0.5)
+# object <- RunUMAP(object, reduction = "mnn", dims = c(1:15))
 object <- FindNeighbors(object, reduction = "mnn", 
                         dims = c(1:16),
                         k.param = 10)
