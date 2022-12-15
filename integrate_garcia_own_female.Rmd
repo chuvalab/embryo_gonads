@@ -1,0 +1,187 @@
+---
+title: "Integrate female Garcia-Alonso with own dataset"
+output:
+  html_document:
+    keep_md: true
+    smart: false
+    toc: true
+    toc_float: true
+    theme: united
+date: 'Compiled: `r format(Sys.Date(), "%B %d, %Y")`'
+---
+***
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  cache.lazy = FALSE,
+  tidy = TRUE
+)
+```
+
+# J. Guo testis dataset
+* 10.1016/j.stem.2020.12.004
+
+## Libraries
+```{r}
+suppressMessages(library(plotly))
+suppressMessages(library(Seurat))
+suppressMessages(library(dplyr))
+suppressMessages(library(Matrix))
+suppressMessages(library(topGO))
+suppressMessages(library(org.Hs.eg.db))
+suppressMessages(library(gplots))
+suppressMessages(library(genefilter))
+suppressMessages(library(future))
+suppressMessages(library(batchelor))
+suppressMessages(library(SeuratWrappers))
+suppressMessages(library(gprofiler2))
+suppressMessages(library(ggplot2))
+suppressMessages(library(gridExtra))
+
+## We can use multiple cores for some functions, see: https://satijalab.org/seurat/v3.2/future_vignette.html
+# plan("multiprocess", workers = 4)
+# plan()
+options(future.globals.maxSize= 6091289600)
+outputDir = getwd()
+
+# A list of cell cycle markers, from Tirosh et al, 2015, is loaded with Seurat.  We can
+# segregate this list into markers of G2/M phase and markers of S phase
+s.genes <- cc.genes$s.genes
+g2m.genes <- cc.genes$g2m.genes
+```
+
+## Load Seurat objects
+* Garcia AnnData was downloaded from: https://www.reproductivecellatlas.org/gonads.html
+* Convetred using seuratDisk following: https://mojaveazure.github.io/seurat-disk/articles/convert-anndata.html
+* Load own male dataset after filtering
+```{r}
+garcia_male <- readRDS("/path/to/human_main_female.rds")
+own_female <- readRDS("/path/to/female_gonadal_remove_doublets_mnn.rds")
+```
+
+
+## Merge Seurat objects
+* Add metadata own dataset
+```{r}
+own_female[["donor"]] <- "own"
+own_female[["lineage"]] <- "own"
+own_female[["dataset"]] <- "own"
+garcia_male[["dataset"]] <- "garcia"
+
+## Rename columns to match with own naming
+colnames(garcia_male@meta.data)[1] <- "nFeature_RNA"
+colnames(garcia_male@meta.data)[11] <- "percent.mt" ## Rename to align with own naming
+colnames(garcia_male@meta.data)[12] <- "nCount_RNA"
+
+gonads_mesonephros <- merge(x = garcia_male, 
+                            y = own_female)
+table(gonads_mesonephros[['donor']])
+table(gonads_mesonephros[['age']])
+gonads_mesonephros
+```
+
+## QC
+* Visualize QC previously applied
+```{r}
+p1 <- VlnPlot(gonads_mesonephros, 
+             features = "nFeature_RNA", 
+             ncol = 1,
+             pt.size = 0)
+p1 <- p1 + geom_jitter(size = 0.1, alpha = 0.2) + ylim(0, NA) + theme(legend.position = "none")
+p2 <- VlnPlot(gonads_mesonephros, 
+             features = "nCount_RNA", 
+             ncol = 1,
+             pt.size = 0)
+p2 <- p2 + geom_jitter(size = 0.1, alpha = 0.2) + ylim(0, NA) + theme(legend.position = "none")
+p3 <- VlnPlot(gonads_mesonephros,
+              features = "percent.mt",
+              ncol = 1,
+              pt.size = 0)
+p3 <- p3 + geom_jitter(size = 0.1, alpha = 0.2) + ylim(0, NA) + theme(legend.position = "none")
+grid.arrange(p1, p2, p3, ncol=3)
+```
+
+## Normalize and scale data
+```{r}
+gonads_mesonephros <- NormalizeData(gonads_mesonephros, 
+                                    normalization.method = "LogNormalize", 
+                                    scale.factor = 50000)
+gonads_mesonephros <- FindVariableFeatures(gonads_mesonephros, 
+                                           selection.method = "vst")
+gonads_mesonephros <- ScaleData(gonads_mesonephros) 
+```
+
+## Run PCA, UMAP, clustering functions
+```{r}
+gonads_mesonephros <- RunPCA(gonads_mesonephros, 
+                             verbose = FALSE)
+ElbowPlot(gonads_mesonephros)
+gonads_mesonephros <- FindNeighbors(gonads_mesonephros, 
+                                    dims = c(1:15))
+gonads_mesonephros <- FindClusters(gonads_mesonephros,
+                                   resolution = 0.4)
+gonads_mesonephros <- RunUMAP(gonads_mesonephros, 
+                              dims = c(1:15))
+DimPlot(gonads_mesonephros, 
+        reduction = "umap")
+ggsave("umap_clusters.pdf",
+       width = 10,
+       height = 7)
+DimPlot(gonads_mesonephros, 
+        reduction = "umap",
+        group.by = "lineage")
+ggsave("umap_clusters_age.pdf",
+       width = 10,
+       height = 7)
+DimPlot(gonads_mesonephros, 
+        reduction = "umap",
+        group.by = "donor")
+ggsave("umap_clusters_origin.pdf",
+       width = 10,
+       height = 7)
+saveRDS(object = gonads_mesonephros, 
+        file = "gonads_mesonephros_no_mnn.rds")
+```
+
+## Batch corrrect MNN between in garcia and own
+* We use the "donor" field, which will also correct for the donors present inthe garcia
+* Our own dataset will be treated as another donor 
+```{r}
+gonads_mesonephros <- RunFastMNN(object.list = SplitObject(gonads_mesonephros, split.by = "donor"))
+```
+
+## Redo with mnn correction
+```{r}
+gonads_mesonephros <- FindNeighbors(gonads_mesonephros, 
+                                    reduction = "mnn",
+                                    dims = c(1:15))
+gonads_mesonephros <- FindClusters(gonads_mesonephros,
+                                   resolution = 0.4)
+gonads_mesonephros <- RunUMAP(gonads_mesonephros,
+                              reduction = "mnn",
+                              dims = c(1:15))
+DimPlot(gonads_mesonephros, 
+        reduction = "umap")
+ggsave("umap_clusters_mnn.pdf",
+       width = 10,
+       height = 7)
+DimPlot(gonads_mesonephros, 
+        reduction = "umap",
+        group.by = "lineage")
+ggsave("umap_clusters_age_mnn.pdf",
+       width = 10,
+       height = 7)
+DimPlot(gonads_mesonephros, 
+        reduction = "umap",
+        group.by = "donor")
+ggsave("umap_clusters_origin_mnn.pdf",
+       width = 10,
+       height = 7)
+saveRDS(object = gonads_mesonephros, 
+        file = "gonads_mesonephros_mnn.rds")
+```
+
+### Session Info
+```{r}
+sessionInfo()
+```
